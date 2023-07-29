@@ -13,6 +13,9 @@ type SocksPortNumber = number;
 export type RequestHeaders = { [header: string]: string } | {};
 export type ResponseHeaders = { [header: string]: string | string[] };
 
+// const TorBridge: NativeTor = NativeModules.TorBridge;
+const TorBridge: NativeTor = global.TorBridge as NativeTor;
+
 /**
  * Supported Request types
  * @todo PUT
@@ -66,18 +69,19 @@ interface ProcessedRequestResponse extends RequestResponse {}
  * Used internally, public calls should be made on the returned TorType
  */
 interface NativeTor {
-  startDaemon(timeoutMs: number): Promise<SocksPortNumber>;
+  startDaemon(timeoutMs: number, cb: (x: any) => void): number;
 
-  stopDaemon(): Promise<void>;
+  stopDaemon(cb: (x: number) => void): Promise<number>;
 
-  getDaemonStatus(): Promise<string>;
+  getDaemonStatus(): string;
 
   request<T extends RequestMethod>(
     url: string,
     method: T,
     data: string, // native side expects string for body
     headers: RequestHeaders,
-    trustInvalidSSL: boolean
+    trustInvalidSSL: boolean,
+    cb: (x: any) => void
   ): Promise<RequestResponse>;
 
   startTcpConn(target: string, timeoutMs: number): Promise<string>;
@@ -444,7 +448,7 @@ type TorType = {
    * DONE - Daemon has completed boostraing and socks proxy is ready to be used to route traffic.
    * <other> - A status returned directly by the Daemon that can indicate a transient state or error.
    */
-  getDaemonStatus(): Promise<string>;
+  getDaemonStatus(): string;
   /**
    * Accessor the Native request function
    * Should not be used unless you know what you are doing.
@@ -460,8 +464,6 @@ type TorType = {
   deleteHiddenService: typeof _deleteHiddenService;
   startHttpService: typeof _startHttpService;
 };
-
-const TorBridge: NativeTor = NativeModules.TorBridge;
 
 /**
  * Tor module factory function
@@ -516,7 +518,8 @@ export default ({
       lastAppState.match(/background/) &&
       nextAppState === 'active'
     ) {
-      const status = NativeModules.TorBridge.getDaemonStatus();
+      // FIXME HERE THIS TO PROMISSE and own function
+      const status = TorBridge.getDaemonStatus();
       // Daemon should be in NOTINIT status if coming from background and this is enabled, so if not shutodwn and start again
       if (status !== 'NOTINIT') {
         await stopIfRunning();
@@ -528,7 +531,7 @@ export default ({
       lastAppState.match(/active/) &&
       nextAppState === 'background'
     ) {
-      const status = NativeModules.TorBridge.getDaemonStatus();
+      const status = TorBridge.getDaemonStatus();
       if (status !== 'NOTINIT') {
         await stopIfRunning();
       }
@@ -536,18 +539,26 @@ export default ({
     lastAppState = nextAppState;
   };
 
-  const startIfNotStarted = () => {
+  const startIfNotStarted = async (): Promise<number> => {
     if (!bootstrapPromise) {
-      bootstrapPromise = NativeModules.TorBridge.startDaemon(
-        bootstrapTimeoutMs
-      );
+      bootstrapPromise = new Promise<number>((res, rej) => {
+        const startResult = TorBridge.startDaemon(bootstrapTimeoutMs, (v) => {
+          console.log('resolved to ', v);
+          res(v);
+        });
+        if (startResult < 0) {
+          rej('Error startingDaemon');
+        }
+      });
     }
     return bootstrapPromise;
   };
-  const stopIfRunning = async () => {
+  const stopIfRunning = () => {
     console.warn('Stopping Tor daemon.');
     bootstrapPromise = undefined;
-    await NativeModules.TorBridge.stopDaemon();
+    return new Promise((res, rej) =>
+      TorBridge.stopDaemon((r) => (r === 1 ? res(true) : rej('Invalid return')))
+    );
   };
 
   /**
@@ -592,11 +603,34 @@ export default ({
   return {
     async get(url: string, headers?: Headers, trustSSL: boolean = true) {
       await startIfNotStarted();
-      return await onAfterRequest(
-        await requestQueueWrapper(() =>
-          TorBridge.request(url, RequestMethod.GET, '', headers || {}, trustSSL)
+      return new Promise((res, rej) =>
+        TorBridge.request(
+          url,
+          RequestMethod.GET,
+          '',
+          headers || {},
+          trustSSL,
+          (result) => {
+            console.log('request GET', res);
+            res(result);
+          }
         )
       );
+
+      //return await onAfterRequest(
+      //  await requestQueueWrapper(() =>
+      //    TorBridge.request(
+      //      url,
+      //      RequestMethod.GET,
+      //      '',
+      //      headers || {},
+      //      trustSSL,
+      //      (res) => {
+      //        console.log('request GET', res);
+      //      }
+      //    )
+      //  )
+      //);
     },
     async post(
       url: string,
@@ -612,7 +646,10 @@ export default ({
             RequestMethod.POST,
             body,
             headers || {},
-            trustSSL
+            trustSSL,
+            (res) => {
+              console.log('request POST', res);
+            }
           )
         )
       );
@@ -631,7 +668,10 @@ export default ({
             RequestMethod.DELETE,
             body || '',
             headers || {},
-            trustSSL
+            trustSSL,
+            (res) => {
+              console.log('request DELETE', res);
+            }
           )
         )
       );
