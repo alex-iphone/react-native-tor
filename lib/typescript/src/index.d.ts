@@ -56,11 +56,11 @@ interface ProcessedRequestResponse extends RequestResponse {
  * Used internally, public calls should be made on the returned TorType
  */
 interface NativeTor {
-    startDaemon(timeoutMs: number, cb: (x: any) => void): number;
-    stopDaemon(cb: (x: number) => void): Promise<number>;
-    getDaemonStatus(): string;
+    startDaemon(timeoutMs: number): Promise<SocksPortNumber>;
+    stopDaemon(): Promise<void>;
+    getDaemonStatus(): Promise<string>;
     request<T extends RequestMethod>(url: string, method: T, data: string, // native side expects string for body
-    headers: RequestHeaders, trustInvalidSSL: boolean, cb: (x: any) => void): Promise<RequestResponse>;
+    headers: RequestHeaders, trustInvalidSSL: boolean): Promise<RequestResponse>;
     startTcpConn(target: string, timeoutMs: number): Promise<string>;
     sendTcpConnMsg(target: string, msg: string, timeoutSeconds: number): Promise<boolean>;
     stopTcpConn(target: string): Promise<boolean>;
@@ -195,7 +195,7 @@ declare type TorType = {
      * DONE - Daemon has completed boostraing and socks proxy is ready to be used to route traffic.
      * <other> - A status returned directly by the Daemon that can indicate a transient state or error.
      */
-    getDaemonStatus(): string;
+    getDaemonStatus(): Promise<string>;
     /**
      * Accessor the Native request function
      * Should not be used unless you know what you are doing.
