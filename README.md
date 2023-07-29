@@ -40,6 +40,7 @@ makeTorRequest();
 If you think this is awesome, please consider [contributing to Privacy and Opensource](#Contributing-to-Privacy-and-Opensource) !
 
 ## Highlights
+- disabled typescript builds
 - Embeds a fully functional Tor Daemon, with its own circuit (non exit) removing the dependency on Orbot and allowing Tor usage on IOS.
 - Provides a Socks5 proxy enabled REST client to allow you to make Rest calls on Onion URLs directly from JS just as you would with Axios, Frisbee etc..
 - Tcp socket support via a event like interface!
